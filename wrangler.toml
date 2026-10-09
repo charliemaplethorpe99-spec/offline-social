@@ -1,4 +1,5 @@
 name = "offline-social"
+main = "worker/index.ts"
 compatibility_date = "2026-10-09"
 workers_dev = true
 preview_urls = true
@@ -6,3 +7,13 @@ preview_urls = true
 [assets]
 directory = "./dist"
 not_found_handling = "single-page-application"
+binding = "ASSETS"
+run_worker_first = ["/api/*"]
+
+[[kv_namespaces]]
+binding = "APP_KV"
+id = "912952e853ef4bbc83f67fb8660925a6"
+preview_id = "8906ba938607477d8800c6d2c85721df"
+
+[vars]
+IG_API_VERSION = "v26.0"

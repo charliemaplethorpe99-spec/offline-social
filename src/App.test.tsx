@@ -29,14 +29,16 @@ describe('no-scroll companion demo',()=>{
     expect(screen.getByText('See you soon')).toBeInTheDocument();
     expect(screen.getByRole('status')).toHaveTextContent(/Nothing was sent to Instagram/i);
   });
-  it('explains professional account limits before enabling demo mode',()=>{
+  it('explains account eligibility, keeps real sign-in separate from demo mode, and never accepts passwords',()=>{
     render(<App/>);
     fireEvent.click(screen.getAllByRole('button',{name:'Settings'})[0]);
-    expect(screen.getByText(/Only professional Creator and Business accounts/i)).toBeInTheDocument();
-    expect(screen.getByRole('button',{name:/Try demo mode/i})).toBeDisabled();
+    expect(screen.getByText(/Official Instagram Login supports Creator and Business accounts/i)).toBeInTheDocument();
+    expect(screen.getByText(/private consumer accounts/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Instagram password/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('button',{name:/Connect Instagram/i})).toBeDisabled();
     fireEvent.click(screen.getByRole('checkbox'));
-    expect(screen.getByRole('button',{name:/Try demo mode/i})).toBeEnabled();
-    fireEvent.click(screen.getByRole('button',{name:/Try demo mode/i}));
+    expect(screen.getByRole('button',{name:/Connect Instagram/i})).toBeDisabled();
+    fireEvent.click(screen.getByRole('button',{name:/Use demo mode instead/i}));
     expect(screen.getByRole('status')).toHaveTextContent(/No Instagram account was connected/i);
   });
   it('requires an explicit review step and does not claim a demo publish succeeded',()=>{

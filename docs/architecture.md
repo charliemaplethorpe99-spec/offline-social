@@ -1,28 +1,36 @@
 # Architecture
 
-## Current implementation
+## Runtime
 
-- Vite + React + TypeScript static frontend, built to `dist` and suitable for Cloudflare Pages.
-- `src/domain.ts` contains small deterministic helpers for account/permission capability checks, strict Instagram URL validation, and bounded page sizes.
-- The Inbox and shared-Reel card use explicitly fictional demo fixtures from `src/domain.ts`. User replies are held only in component memory, never sent to a server, and reset on refresh.
-- My updates explains that a general followed-accounts feed and arbitrary third-party Stories/Reels are unavailable.
-- Create only previews a local filename/caption and explicitly states no upload or publication takes place.
-- There is no backend, OAuth callback, API token, database, webhook, session cookie, or external analytics in this version.
+- React + TypeScript + Vite builds the responsive static UI to `dist/`.
+- Cloudflare Workers Static Assets serves the UI. `worker/index.ts` handles `/api/*` in the same origin.
+- Cloudflare KV (`APP_KV`) stores single-use OAuth state and encrypted session/token records with TTLs. No D1, R2, message archive, or public media storage is used.
+- Instagram API with Instagram Login calls use the configured `IG_API_VERSION` on `graph.instagram.com`.
 
-## Intended live boundary
+## OAuth and sessions
 
-The browser must never receive a Meta app secret or long-lived Instagram token. A future Pages Function/Worker should own the OAuth callback, validate one-time state (and PKCE where supported by the selected flow), exchange authorization codes server-side, map account identity, authorize every operation against the server session, and call only documented Meta endpoints. Permission requests should be feature-gated and minimal. Callback origins/redirect URIs must be allowlisted; state-changing routes need CSRF defenses and throttling. Never log tokens, auth headers, message bodies, or private media.
+1. The user reads account eligibility and limitations, checks consent, and selects **Connect Instagram**.
+2. `/api/instagram/login` redirects to Instagram’s official OAuth page with only `instagram_business_basic`, an exact callback URI, and random `state`. The state is stored in KV and correlated with a short-lived HttpOnly cookie.
+3. `/api/instagram/callback` consumes the one-time state, exchanges the authorization code server-side, exchanges the short-lived token for a long-lived token, and validates the returned `/me` identity.
+4. The Worker encrypts the token using AES-GCM under `TOKEN_ENCRYPTION_KEY`, writes a minimal record into KV, and returns an HMAC-signed opaque `HttpOnly; Secure; SameSite=Lax` cookie.
+5. API requests resolve that session server-side. `/api/instagram/media` caps a request at 15 records (the UI requests 10) and exposes a cursor only for explicit “Load more”.
+6. Disconnect deletes the KV session and expires the cookie.
 
-If token persistence becomes necessary, use D1 only for minimal account/session metadata and encrypted token ciphertext, with a separately managed encryption key in a Cloudflare secret. Add migrations, expiry/cleanup, data deletion, deauthorization and Meta data-deletion callbacks before enabling any real account data. Do not store DM bodies or downloaded media by default. This architecture is a future integration boundary, not code that is present today.
+Instagram Login’s current official instructions do not document PKCE parameters for this flow; this implementation uses one-time state and server-side code exchange. It does not add speculative OAuth parameters. Verify Meta’s current docs before changing the flow.
 
-## Bounded interaction
+## Capability boundary
 
-No feed is implemented. Conversation list search filters the finite fixture set. Message history initially displays a finite batch and requires the explicit “Load earlier messages” control. There is no scroll observer that fetches more content, no auto-play media element, and no automatic next-item transition. `boundPageSize` caps future API page sizes at 50. Autoplay is always disabled.
+The only live API operation currently implemented is basic profile/account-owned media retrieval. The Inbox fixtures and publishing draft are demo-only. The integration intentionally does not request message, comments, insights, or publishing scopes. No general followed-account feed, arbitrary Stories, Reels discovery, or personal-account login is implemented.
 
-## Trust boundaries
+## Session limits and private data
 
-All demo text is local fixture/user text and is rendered through React text nodes. Any future external URL must pass an HTTPS Instagram-host check (the current `safeInstagramUrl` helper does this for the demo). Production API response schemas, HTML, IDs, cursor values, file uploads and webhook signatures still need server-side validation; they are not covered by the current static demo.
+The media endpoint bounds page size and never automatically retrieves a next cursor. Media is not mirrored or cached by the server. API responses set `Cache-Control: no-store`. The browser receives only data required to render the current view; it never receives an access token or app secret.
 
-## Hosting and embedding
+## Security boundaries and known gaps
 
-Use Cloudflare Pages Git integration for static assets. There is no need for D1/KV/R2 or a Worker today. `_headers` denies framing by default. A production embed requires a known explicit parent-origin allowlist, a separate OAuth top-level flow, and testing in the real host-page context; do not use wildcard `frame-ancestors` or depend on third-party cookies.
+- Protect app ID/secret and encryption/session keys as Worker bindings; never use `VITE_*` names.
+- OAuth callback origin and path are checked against the configured request host.
+- Disconnect checks same-origin requests. The API has no public CORS access.
+- No webhook, message send, publishing, Meta deauthorization callback, or Meta data-deletion callback is implemented yet.
+- Cloudflare KV is eventually consistent. It is adequate for this single-account session use case, but do not use it as a message queue or cross-region lock.
+- Production requires real test-account authorization, app review decisions, callback/domain configuration, a published privacy notice, and Meta-required deletion handling.

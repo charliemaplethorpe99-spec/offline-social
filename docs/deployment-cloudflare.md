@@ -1,41 +1,86 @@
-# Cloudflare Workers deployment
+# Cloudflare + Meta setup
 
-**Docs checked:** 2026-10-09. This repository uses the existing Cloudflare Workers Static Assets deployment path. The Vite build is served from `dist` using SPA fallback in `wrangler.toml`. No Worker API, OAuth callback, database, webhook, Meta secrets, or Cloudflare account is configured.
+Checked 2026-10-09 against [Cloudflare Workers Static Assets](https://developers.cloudflare.com/workers/static-assets/), [Workers KV](https://developers.cloudflare.com/kv/get-started/), [Wrangler KV commands](https://developers.cloudflare.com/workers/wrangler/commands/kv/), and [Workers Secrets](https://developers.cloudflare.com/workers/configuration/secrets/).
 
-## GitHub → Workers Builds
+## What is configured in this repository
 
-1. Connect the GitHub repository to Cloudflare Workers Builds and select the repository/root directory.
-2. Use build command `pnpm install --frozen-lockfile && pnpm build` and deploy command `pnpm exec wrangler deploy`. Keep `pnpm-lock.yaml` committed.
-3. `wrangler.toml` sets the Worker name to `offline-social`, compatibility date to `2026-10-09`, asset directory `./dist`, and SPA fallback. Configure the production branch as desired and enable preview builds for non-production branches / pull requests.
-4. Check the build status in GitHub and the deployment URL in Cloudflare. Add a `workers.dev` or custom domain to the Worker and complete DNS/TLS setup. Supply your own domain values; none were available in this task.
+- Worker name: `offline-social`.
+- Entrypoint: `worker/index.ts`.
+- Static Vite build: `dist/`, SPA fallback enabled.
+- API routes run in the Worker before static asset fallback.
+- `APP_KV` binding uses separate namespaces for production and preview.
+- Graph API version is `v26.0` in `wrangler.toml`; recheck Meta’s API lifecycle before upgrading.
+- App secrets are intentionally absent from the repository.
 
-## Free plan and bindings
+The connected Cloudflare account now has empty namespaces:
 
-Official Cloudflare docs checked 2026-10-09 list Workers Free at **100,000 requests/day** and **10 ms CPU time per invocation**. Pages Function invocations share the Workers request allowance; static asset requests are unlimited/free. D1 is available on Free but is not used here. Recheck current quotas before adding API calls, polling, storage or webhooks. Static asset hosting alone avoids Worker invocation quotas.
+- Production `offline-social-production`: `912952e853ef4bbc83f67fb8660925a6`
+- Preview `offline-social-preview`: `8906ba938607477d8800c6d2c85721df`
 
-There are currently no required bindings or secrets. Do not enter Meta credentials in Vite variables (`VITE_*` is client-visible). When a backend is added, configure test/preview and production secrets separately in Cloudflare’s server-side environment bindings. Document each secret’s purpose and rotation before use.
+The IDs are bindings, not credentials. Production and preview must use different namespaces and secrets.
 
-## Meta configuration (future live integration)
+## Configure a Meta developer app
 
-1. Create a Meta developer app and configure the Instagram API with Instagram Login for Business/Creator accounts.
-2. Add the exact HTTPS callback URL that the future server implementation uses, plus a local callback for development. This project does not yet implement or define that callback, so do not register a guessed URL.
-3. Add required app domains, privacy policy, terms if requested, and user data deletion instructions/callback before review. Publish these at the final domain first.
-4. Add only the needed Instagram permission(s). Verify scopes, app roles/test accounts, and permission access level in the Meta dashboard; obtain App Review/Advanced Access as Meta requires before onboarding outside test roles.
-5. If message webhooks are implemented, add the documented webhook callback/verify token and subscribe only the needed fields. Callback signature validation and deletion/deauthorization behavior must ship before production use.
-6. Test with an eligible professional test account. Never use a personal account password, cookie export, scraping, or private endpoint.
-7. Merge/push to the configured production branch, confirm the Cloudflare build and deployed URL, then test the public site and OAuth top-level redirect.
+1. In [Meta for Developers](https://developers.facebook.com/), create a Business app and add the Instagram API with Instagram Login.
+2. Register your app’s production OAuth callback exactly as `https://YOUR_WORKER_HOST/api/instagram/callback`. For local Worker testing, use `http://localhost:8787/api/instagram/callback` only if Meta accepts the redirect and the browser can retain the secure cookie; HTTPS preview is the reliable test setup. The Worker validates same-origin callback host and exact `/api/instagram/callback` path.
+3. Add the production host to the Meta app’s allowed domains. Publish a privacy notice and user-data deletion instructions/URL before review. Supply your own legal text and domain; this repository does not invent a public privacy URL.
+4. Add your Instagram **professional** account as an app tester/role in Meta and accept the invitation from that account. Meta dashboard labels can change; use the current app-role/test-user documentation.
+5. This release requests `instagram_business_basic` only. Test the profile and own-media calls in Development mode. To let people outside app roles connect, complete Meta’s applicable App Review/Advanced Access. Messaging and publishing permissions are not requested or enabled by this release.
 
-## Embed and domain
+Meta’s official [Instagram Login collection](https://www.postman.com/meta/instagram/folder/1z5vxzu/instagram-api-with-instagram-login) says the flow is for Business and Creator accounts and does not require a linked Facebook Page. Private consumer accounts cannot be connected. A switch from personal/private to professional may require making the profile public; keep it private if that is important, and do not connect it through an unofficial method.
 
-The reliable integration is a clear link or same-site subdomain (for example `social.example.com`). The current `_headers` policy blocks iframe framing by default. If a future owner needs iframe embedding, change `frame-ancestors` to the exact supplied parent origins, test the actual OAuth flow as a top-level redirect/popup, and verify cookies/session behavior in target browsers. No wildcard origin and no third-party-cookie workaround.
+## Configure Cloudflare
 
-## Rotation, disconnect, rollback
+1. Confirm the Workers project is connected to `charliemaplethorpe99-spec/offline-social`, branch `main`. Use `pnpm install --frozen-lockfile && pnpm build` as the build command and `pnpm deploy` as the deploy command. Keep pull-request/branch builds in preview and `main` as production.
+2. If binding the namespaces manually in the dashboard, add KV binding `APP_KV` and select the production namespace for production and preview namespace for previews. The repository already declares both in `wrangler.toml`.
+3. Configure these Worker variables/secrets separately for production and preview. Use Cloudflare’s secret interface (values are hidden after setting):
 
-No current credentials can be rotated. For a future integration, rotate Meta app secrets in Meta and Cloudflare server-side bindings, redeploy, revoke old tokens, invalidate sessions, and review logs. Disconnect must revoke/delete app-held tokens and metadata; Delete my app data must remove all account-linked records and cease calls. Rollback by selecting a prior successful Pages deployment; investigate and rotate credentials before restoring a compromised build.
+   - `META_APP_ID`: Meta app ID.
+   - `META_APP_SECRET`: Meta app secret (secret).
+   - `META_REDIRECT_URI`: exact callback URL for that environment, e.g. `https://YOUR_WORKER_HOST/api/instagram/callback`.
+   - `APP_SESSION_SECRET`: random, unique signing key.
+   - `TOKEN_ENCRYPTION_KEY`: base64 encoding of 32 cryptographically random bytes; store separately from the Meta app secret.
+   - `APP_BASE_URL`: optional same-origin base URL used for callback messages.
 
-### Official Cloudflare sources
+   Generate keys locally with Node.js, then enter the printed values directly into Cloudflare Secrets. Do not commit the outputs:
 
-- [Workers Builds GitHub integration](https://developers.cloudflare.com/workers/ci-cd/builds/git-integration/github-integration/)
-- [Workers Builds configuration](https://developers.cloudflare.com/workers/ci-cd/builds/configuration/)
-- [Workers Static Assets](https://developers.cloudflare.com/workers/static-assets/)
-- [Workers limits](https://developers.cloudflare.com/workers/platform/limits/)
+   ```sh
+   node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))" # APP_SESSION_SECRET
+   node -e "console.log(require('crypto').randomBytes(32).toString('base64'))" # TOKEN_ENCRYPTION_KEY
+   ```
+
+   Cloudflare documents `pnpm wrangler secret put KEY` and dashboard-managed secrets. Setting a secret can deploy a Worker version immediately; coordinate this with the production branch.
+
+4. Add the Worker’s `workers.dev` hostname or a custom domain. Set the same exact host in Meta’s OAuth callback and `APP_BASE_URL`. HTTPS is required for production secure cookies.
+5. Verify the deployed `GET /api/health` response reports `instagramLoginConfigured: true`. Then sign in using a Meta app-role professional test account and verify `GET /api/instagram/status` is connected and My updates displays that account’s own media.
+6. For production, merge/push to `main`, wait for the Worker build, then check the deployed site and OAuth callback. Do not treat a successful static deployment as proof that Meta has approved the app.
+
+## Local Worker testing
+
+Create a local KV namespace or use Wrangler’s local KV persistence, then create `.dev.vars` (never commit it) with safe test/development credentials:
+
+```text
+META_APP_ID=...
+META_APP_SECRET=...
+META_REDIRECT_URI=http://localhost:8787/api/instagram/callback
+APP_SESSION_SECRET=...
+TOKEN_ENCRYPTION_KEY=...
+APP_BASE_URL=http://localhost:8787
+```
+
+Run `pnpm exec wrangler dev`. If OAuth cookies are rejected on the local HTTP origin, test on the HTTPS preview deployment instead. Do not weaken production cookie settings to work around local browser behavior.
+
+## Embedding
+
+The app uses a restrictive `frame-ancestors 'none'` header by default. Use a direct link or same-site subdomain for reliable sign-in. If embedding becomes a real requirement, change the allowlist to the exact parent domain(s), then test OAuth as a top-level redirect in the actual browser. Do not use wildcard framing or depend on third-party cookies.
+
+## Disconnect, revoke, rotate, and delete
+
+- In Settings, **Disconnect Instagram** deletes the app’s KV token/session and expires its cookie.
+- The user can revoke the app in Instagram’s connected-app permissions. This release does not implement Meta’s deauthorization webhook or data-deletion callback; production review must not claim those are present.
+- To rotate secrets, set new Worker secrets, redeploy, and disconnect/reconnect accounts if token encryption key changed. Changing `TOKEN_ENCRYPTION_KEY` makes existing ciphertext unreadable; remove affected KV session records before/after rotation.
+- The Worker stores no messages or media. If more data types are added, implement a complete delete-data flow before shipping them.
+
+## Quotas
+
+Cloudflare’s [Workers static-assets billing docs](https://developers.cloudflare.com/workers/static-assets/billing-and-limitations/) say static asset requests are free/unlimited while requests that invoke Worker code count against Workers quotas; confirm current Free-plan request/CPU limits in Cloudflare’s [limits docs](https://developers.cloudflare.com/workers/platform/limits/). This app does not poll; each explicit profile/media action invokes a bounded API call.

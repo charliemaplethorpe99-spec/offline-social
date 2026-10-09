@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "scripts": {"dev":"vite --host 0.0.0.0", "build":"tsc -b && vite build", "test":"vitest run", "preview":"vite preview", "deploy":"wrangler deploy"},
+  "scripts": {"dev":"vite --host 0.0.0.0", "build":"tsc -b && vite build", "test":"vitest run", "preview":"vite preview", "deploy":"wrangler deploy", "deploy:check":"wrangler deploy --dry-run", "worker:typecheck":"tsc -p tsconfig.worker.json"},
   "dependencies": {"@vitejs/plugin-react":"latest", "vite":"latest", "typescript":"latest", "react":"latest", "react-dom":"latest", "lucide-react":"^0.468.0"},
   "devDependencies": {"vitest":"latest", "jsdom":"latest", "@testing-library/react":"latest", "@testing-library/jest-dom":"latest", "@types/react":"latest", "@types/react-dom":"latest", "wrangler":"latest"}
 }
