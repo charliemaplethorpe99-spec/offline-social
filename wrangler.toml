@@ -1,7 +1,8 @@
-name = "comingsoon1"
-compatibility_date = "2026-06-20"
+name = "offline-social"
+compatibility_date = "2026-10-09"
 workers_dev = true
 preview_urls = true
 
 [assets]
-directory = "./Coming soon website"
+directory = "./dist"
+not_found_handling = "single-page-application"
